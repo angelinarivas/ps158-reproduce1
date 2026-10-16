@@ -1,7 +1,7 @@
 # AI lobbying, 2020–2026
 
 Replicates and extends Public Citizen's count of federal lobbyists working on
-AI issues ("Generative Influence", February 2026), from 2020 through Q2 2026.
+AI issues ("Generative Influence", February 2026), from 2020 through Q2 2026. One thing I would do next is to update it after the Q3 2026 reports are in after October 20th so that the last quarter could be complete. 
 
 ## Figures
 
