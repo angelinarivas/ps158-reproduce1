@@ -13,7 +13,7 @@ keyword patterns below.
 
 Outputs (in data/):
     ai_lobbyist_rows.csv     one row per AI lobbyist x filing section
-    ai_by_quarter.csv        counts per quarter
+    ai_by_quarter.csv        counts per quarter, plus AI lobbyists per client
     ai_by_year.csv           counts per year (each lobbyist counted once/year)
 
 Usage:
@@ -24,6 +24,7 @@ Usage:
 import argparse
 import csv
 import re
+import statistics
 import sys
 import urllib.request
 import zipfile
@@ -201,12 +202,27 @@ def parse_quarter(path, year, q):
     return rows, all_lobbyists
 
 
+def per_client_stats(team):
+    """Distribution of AI lobbyists per client: {client: set(lobbyists)} -> stats."""
+    sizes = sorted(len(v) for v in team.values())
+    q1, _, q3 = statistics.quantiles(sizes, n=4, method="inclusive")
+    return {
+        "per_client_median": float(statistics.median(sizes)),
+        "per_client_p25": q1,
+        "per_client_p75": q3,
+        "per_client_mean": round(statistics.mean(sizes), 2),
+    }
+
+
 def summarize(rows, all_by_period):
-    """Unique lobbyists, lobbyist-client pairs, and clients per period."""
+    """Unique lobbyists, lobbyist-client pairs, clients, and team sizes per period."""
     def tally(period_of):
         acc = defaultdict(lambda: defaultdict(set))
+        teams = defaultdict(lambda: defaultdict(set))
         for r in rows:
             p = period_of(r)
+            # A client's AI team: everyone lobbying for it, in-house or via outside firms.
+            teams[p][norm(r["client"])].add(r["lobbyist"])
             acc[p]["lobbyists"].add(r["lobbyist"])
             acc[p]["lobbyist_client_pairs"].add((r["lobbyist"], r["house_id"]))
             acc[p]["clients"].add(norm(r["client"]))
@@ -214,10 +230,10 @@ def summarize(rows, all_by_period):
                 acc[p]["lobbyists_ai_terms"].add(r["lobbyist"])
             if r["match_data_center"]:
                 acc[p]["lobbyists_data_center"].add(r["lobbyist"])
-        return acc
+        return acc, teams
 
-    by_q = tally(lambda r: (r["year"], r["quarter"]))
-    by_y = tally(lambda r: r["year"])
+    by_q, teams_q = tally(lambda r: (r["year"], r["quarter"]))
+    by_y, teams_y = tally(lambda r: r["year"])
     fields = ["lobbyists", "lobbyists_ai_terms", "lobbyists_data_center",
               "lobbyist_client_pairs", "clients"]
 
@@ -225,6 +241,7 @@ def summarize(rows, all_by_period):
     for (y, q) in sorted(by_q):
         rec = {"year": y, "quarter": q, "period": f"{y} Q{q}"}
         rec.update({f: len(by_q[(y, q)][f]) for f in fields})
+        rec.update(per_client_stats(teams_q[(y, q)]))
         rec["all_lobbyists"] = len(all_by_period[(y, q)])
         rec["partial"] = int((y, q) > LAST_COMPLETE)
         q_out.append(rec)
@@ -235,6 +252,7 @@ def summarize(rows, all_by_period):
         rec.update({f: len(by_y[y][f]) for f in fields})
         rec["all_lobbyists"] = len(set().union(
             *(v for (yy, _), v in all_by_period.items() if yy == y)))
+        rec.update(per_client_stats(teams_y[y]))
         rec["partial"] = int((y, 4) > LAST_COMPLETE)
         y_out.append(rec)
     return q_out, y_out
